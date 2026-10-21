@@ -39,6 +39,10 @@ builder.Services.AddSingleton<INewsRepository, NewsRepository>();
 // Клиент tass.ru через AlfaHackaton.HttpClient: BaseAddress — в TassClientSettings
 builder.Services.AddAlfaHttpClient(new TassClientSettings(builder.Configuration));
 
+// Клиент «Альфа-Инвестора» (Playwright) — обычный HttpClient сайт не отдаёт (антибот)
+builder.Services.AddSingleton(new AlfaClientSettings(builder.Configuration));
+builder.Services.AddSingleton<IAlfaClient, AlfaClient>();
+
 // Kafka: IKafkaProducer<NewsEventMessage> — уведомления «новая новость» в топик news-parser.news
 builder.Services.AddProducer<NewsEventMessage>(builder.Configuration.GetSection("Kafka"));
 
@@ -49,6 +53,9 @@ builder.Services.AddSingleton<ITassClient, TassClient>();
 
 // Воркер-парсер TASS
 builder.Services.AddHostedService<TassNewsWorker>();
+
+// Воркер-парсер «Альфа-Инвестора»
+builder.Services.AddHostedService<AlfaNewsWorker>();
 
 // Префикс маршрутов: /news-parser-service/...
 builder.Services.AddControllers(options =>
