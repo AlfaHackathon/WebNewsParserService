@@ -1,5 +1,9 @@
+using System.Net;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Api.Models.Alfa;
 using Api.Services.Interfaces;
 using Api.Settings;
@@ -8,22 +12,33 @@ using Microsoft.Playwright;
 namespace Api.Services;
 
 /// <summary>
-/// Клиент «Альфа-Инвестора» (https://alfabank.ru/alfa-investor/).
+/// Клиент «Альфа-Инвестора» (https://alfabank.ru/alfa-investor/), гибридная схема.
 ///
-/// У сайта нет публичного API, а новости обычным HTTP-клиентом не отдаются:
-/// 1) страница спрятана за антибот-челленджем ServicePipe (аналог Cloudflare);
-/// 2) TLS-сертификат выпущен НУЦ Минцифры (Russian Trusted Sub CA).
+/// Что за проблема: у сайта нет публичного API, а на прямой HTTP-запрос он отвечает
+/// заглушкой антибот-челленджа ServicePipe (аналог Cloudflare): контент выдаётся
+/// только «настоящему» браузеру после выполнения JavaScript. Плюс TLS-сертификат
+/// выпущен НУЦ Минцифры и по умолчанию не в доверенных.
 ///
-/// Поэтому весь ход через Playwright (headless Chromium): браузер сам проходит
-/// челлендж, --ignore-certificate-errors закрывает вопрос с российским УЦ,
-/// а дальше забираем данные, как делает их собственный фронтенд:
+/// Как решаем (гибрид B):
+/// 1. Основной транспорт — обычный HttpClient. Антибот-челлендж пропускается
+///    по кукам антибот-сессии (spid/spsn и иже), она живёт ограниченное время.
+///    Куки достаются вручную из браузера разово (Alfa:ManualCookies) и дальше
+///    <see cref="CookieContainer"/> сам их поддерживает из ответов сайта.
+///    Сертификат Минцифры — отключение проверки в HttpClientHandler (в Docker
+///    ради хакатонского прототипа проще программного обхода, чем возни с хранилищем).
+/// 2. Страховка: если транспорт получил заглушку (куки протухли), раз в минуту
+///    максимум поднимается headless Chromium (Playwright), проходит челлендж и
+///    свежие куки подмешиваются в <see cref="CookieContainer"/> — дальше HttpClient
+///    снова работает без браузера.
+///
+/// Данные, как их делает собственный фронтенд альфы:
 /// - лента: их внутренний GraphQL POST /api/v1/eye-of-investor/graphql
 ///   (запрос GetFeedPublications, анонимный доступ, курсор-пагинация);
 /// - полный текст статьи: в HTML статьи вшито SSR-состояние (script#app_state),
-///   внутри pageContent.fetchResults[].response.value.article — title,
+///   внутри pageContent.fetchResults[].response.value.article — там title,
 ///   body (markdown), publishAt, author, assets.
 /// </summary>
-public class AlfaClient(AlfaClientSettings settings, ILogger<AlfaClient> logger) : IAlfaClient, IAsyncDisposable
+public class AlfaClient : IAlfaClient, IAsyncDisposable
 {
     /// <summary>Путь до ленты новостей «Альфа-Инвестора».</summary>
     private const string FeedPagePath = "/alfa-investor/category/t/news/all-posts/";
@@ -31,9 +46,14 @@ public class AlfaClient(AlfaClientSettings settings, ILogger<AlfaClient> logger)
     /// <summary>Их внутренний GraphQL-эндпоинт (ходим с той же origin, что и сайт).</summary>
     private const string GraphqlPath = "/api/v1/eye-of-investor/graphql";
 
-    /// <summary>Как у TASS: настоящий браузерный User-Agent.</summary>
+    /// <summary>Заголовки как у их же фронтенда (снято из запросов сайта) — часть пропуска WAF.</summary>
     private const string UserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36";
+
+    private const string SecChUa = "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"";
+
+    /// <summary>Маркер заглушки антибот-челленджа в теле ответа (обрывок их обёртки-спиннера).</summary>
+    private const string ChallengeMarker = "js-challenge-loader";
 
     /// <summary>
     /// Запрос GetFeedPublications — в точности как его делает страница
@@ -85,79 +105,77 @@ public class AlfaClient(AlfaClientSettings settings, ILogger<AlfaClient> logger)
         }
         """;
 
-    /// <summary>JS: POST на их GraphQL прямо из контекста страницы (с её куками — антибот не отличает).</summary>
-    private const string FetchGraphqlJs = """
-async payload => {
-    try {
-        const res = await fetch('/api/v1/eye-of-investor/graphql', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: payload
-        });
-        return { status: res.status, body: await res.text() };
-    } catch (e) {
-        return { status: 0, body: String(e) };
-    }
-}
-""";
-
-    /// <summary>JS: вытащить объект статьи из вшитого SSR-состояния страницы.</summary>
-    private const string ExtractArticleJs = """
-() => {
-    const el = document.querySelector('#app_state');
-    if (!el) return null;
-    const st = JSON.parse(el.textContent);
-    const results = (st.pageContent && st.pageContent.fetchResults) || [];
-    for (const result of results) {
-        const article = result && result.response && result.response.value && result.response.value.article;
-        if (article) return article;
-    }
-    return null;
-}
-""";
+    /// <summary>Не чаще раза в это время дёргаем браузер ради свежих кук.</summary>
+    private static readonly TimeSpan CookieRefreshPause = TimeSpan.FromMinutes(1);
 
     private static readonly JsonSerializerOptions JsonWeb = new(JsonSerializerDefaults.Web);
 
-    /// <summary>Все операции подряд по одной странице — гонки не нужны, но подстрахуемся.</summary>
+    private readonly AlfaClientSettings _settings;
+    private readonly ILogger<AlfaClient> _logger;
+
+    /// <summary>Все операции пока последовательно (один воркер) — но гонки шлем под замок.</summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    // --- HTTP: основной транспорт ---
+    private readonly CookieContainer _cookies = new();
+    private readonly HttpClientHandler _handler;
+    private readonly HttpClient _http;
+    private bool _manualCookiesApplied;
+
+    // --- Playwright: только для обновления протухших кук ---
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-    private IPage? _page;
+    private DateTime? _lastCookieRefreshUtc;
+
+    public AlfaClient(AlfaClientSettings settings, ILogger<AlfaClient> logger)
+    {
+        _settings = settings;
+        _logger = logger;
+
+        _handler = new HttpClientHandler
+        {
+            CookieContainer = _cookies,
+            UseCookies = true,
+
+            // сертификат НУЦ Минцифры по умолчанию не в доверенных (и системное
+            // хранилище от имени контейнера менять лишнее) — отключаем проверку
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        };
+        _http = new HttpClient(_handler, disposeHandler: true)
+        {
+            BaseAddress = new Uri(settings.BaseAddress),
+            Timeout = TimeSpan.FromSeconds(30)
+        };
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua", SecChUa);
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua-Mobile", "?0");
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua-Platform", "\"Windows\"");
+        _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    }
 
     public async Task<AlfaFeed?> GetFeedAsync(string? cursor, CancellationToken cancellationToken = default)
     {
-        // shape переменных — 1:1 как шлёт их фронтенд (см. пагинацию "Показать ещё")
-        var payload = JsonSerializer.Serialize(new GraphqlRequest(
+        // shape переменных — 1:1 как шлёт их фронтенд (см. пагинацию «Показать ещё»)
+        var request = JsonSerializer.Serialize(new GraphqlRequest(
             FeedQuery,
             new FeedVariables(
-                new PageFilter(cursor, settings.Limit),
+                new PageFilter(cursor, _settings.Limit),
                 false,
-                new RubricCodesFilter([settings.Rubric]),
+                new RubricCodesFilter([_settings.Rubric]),
                 new FilterTypeFilter("rubrics"))), JsonWeb);
 
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var page = await OpenPageAsync(FeedPagePath, cancellationToken);
-            var http = await page.EvaluateAsync<GraphqlHttpResult?>(FetchGraphqlJs, payload);
-            if (http is null || http.Status != 200 || string.IsNullOrEmpty(http.Body))
+            var body = await FetchAsync(
+                () => PostGraphqlAsync(request, cancellationToken), "лента", cancellationToken);
+            if (body is null)
             {
-                logger.LogWarning("GraphQL альфа-лента: статус {Status}, тело пустое", http?.Status ?? 0);
                 return null;
             }
 
-            var response = JsonSerializer.Deserialize<AlfaFeedResponse>(http.Body, JsonWeb);
+            var response = JsonSerializer.Deserialize<AlfaFeedResponse>(body, JsonWeb);
             return response?.Data?.Feed;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "Не удалось забрать ленту альфа-новостей");
-            return null;
         }
         finally
         {
@@ -167,27 +185,26 @@ async payload => {
 
     public async Task<AlfaArticle?> GetArticleAsync(string path, CancellationToken cancellationToken = default)
     {
+        var articleUrl = $"/alfa-investor/t/{path.Trim('/')}/";
+
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var page = await OpenPageAsync($"/alfa-investor/t/{path.Trim('/')}/", cancellationToken);
-            var articleJson = await page.EvaluateAsync<JsonElement?>(ExtractArticleJs);
+            var html = await FetchAsync(
+                () => GetStringAsync(articleUrl, cancellationToken), $"статья {path}", cancellationToken);
+            if (html is null)
+            {
+                return null;
+            }
+
+            var articleJson = ExtractArticleJson(html);
             if (articleJson is null || articleJson.Value.ValueKind == JsonValueKind.Null)
             {
-                logger.LogWarning("В SSR-состоянии статьи альфа нет объекта article (/{Path})", path);
+                _logger.LogWarning("В SSR-состоянии альфа-статьи нет объекта article ({Url})", articleUrl);
                 return null;
             }
 
             return JsonSerializer.Deserialize<AlfaArticle>(articleJson.Value, JsonWeb);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            logger.LogWarning(exception, "Не удалось открыть страницу альфа-статьи (/{Path})", path);
-            return null;
         }
         finally
         {
@@ -195,35 +212,185 @@ async payload => {
         }
     }
 
-    public async ValueTask DisposeAsync()
+    // --- транспорт с одной автоматической переустановкой кук при встрече челленджа ---
+
+    private async Task<string?> FetchAsync(Func<Task<string?>> request, string what, CancellationToken cancellationToken)
     {
-        if (_page is not null)
+        var body = await EnsureCookiesAndRunAsync(request, what, cancellationToken);
+        if (body is not null)
         {
-            try { await _page.CloseAsync().ConfigureAwait(false); } catch { /* уже закрыта */ }
+            return body;
         }
 
-        if (_browser is not null)
-        {
-            try { await _browser.CloseAsync().ConfigureAwait(false); } catch { /* уже закрыт */ }
-        }
-
-        if (_playwright is not null)
-        {
-            try { _playwright.Dispose(); } catch { /* уже почищено */ }
-        }
-
-        _gate.Dispose();
+        // куки протухли: свежая порция через браузер (rate-limit внутри) и вторая попытка
+        await RefreshCookiesViaBrowserAsync(cancellationToken);
+        return await EnsureCookiesAndRunAsync(request, what, cancellationToken);
     }
 
-    /// <summary>
-    /// Гарантирует браузер+страницу и что она открыта по нужному пути:
-    /// ленивая инициализация + переход с прохождением антибот-челленджа.
-    /// </summary>
-    private async Task<IPage> OpenPageAsync(string path, CancellationToken cancellationToken)
+    private async Task<string?> EnsureCookiesAndRunAsync(Func<Task<string?>> request, string what, CancellationToken cancellationToken)
     {
-        if (_page is null)
+        ApplyManualCookiesOnce();
+
+        var body = await request();
+        if (body is null)
+        {
+            return null;
+        }
+
+        if (body.Contains(ChallengeMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Альфа {What}: ответ — антибот-челлендж (куки протухли?)", what);
+            return null;
+        }
+
+        return body;
+    }
+
+    private void ApplyManualCookiesOnce()
+    {
+        if (_manualCookiesApplied || string.IsNullOrWhiteSpace(_settings.ManualCookies))
+        {
+            _manualCookiesApplied = true;
+            return;
+        }
+
+        // формат — как Cookie-заголовок из DevTools браузера: "spid=...; spsn=...; ..."
+        try
+        {
+            _cookies.SetCookies(new Uri(_settings.BaseAddress), _settings.ManualCookies);
+            _logger.LogInformation("Альфа: применены куки из настроек ({Count} шт)",
+                _settings.ManualCookies.Count(c => c == ';') + 1);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Альфа: не удалось применить ManualCookies — проверь формат");
+        }
+        finally
+        {
+            _manualCookiesApplied = true;
+        }
+    }
+
+    private async Task<string?> PostGraphqlAsync(string requestJson, CancellationToken cancellationToken)
+    {
+        using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+        using var response = await _http.PostAsync(GraphqlPath, content, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            // 403/401 — обычно тоже челлендж или отбнешь сессия: обрабатываем как заглушку
+            _logger.LogWarning("GraphQL альфа-лента: статус {Status}", (int)response.StatusCode);
+            return null;
+        }
+
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    private async Task<string?> GetStringAsync(string path, CancellationToken cancellationToken)
+    {
+        using var response = await _http.GetAsync(path, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("GET альфа {Path}: статус {Status}", path, (int)response.StatusCode);
+            return null;
+        }
+
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    // --- вытащить состояние статьи из SSR-вёрстки ---
+
+    private static JsonElement? ExtractArticleJson(string html)
+    {
+        var match = Regex.Match(
+            html,
+            "<script id=\"app_state\" type=\"application/json\">(.*?)</script>",
+            RegexOptions.Singleline);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var state = JsonNode.Parse(match.Groups[1].Value);
+        var fetchResults = state?["pageContent"]?["fetchResults"] as JsonArray;
+        if (fetchResults is null)
+        {
+            return null;
+        }
+
+        foreach (var fetchResult in fetchResults)
+        {
+            var article = fetchResult?["response"]?["value"]?["article"];
+            if (article is not null)
+            {
+                return JsonSerializer.Deserialize<JsonElement>(article);
+            }
+        }
+
+        return null;
+    }
+
+    // --- Playwright: разово пройти челлендж и забрать свежие куки ---
+
+    private async Task RefreshCookiesViaBrowserAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        if (_lastCookieRefreshUtc is { } last && now - last < CookieRefreshPause)
+        {
+            _logger.LogInformation("Альфа: браузер для кук недавно запускался, пропускаю (rate-limit)");
+            return;
+        }
+
+        _lastCookieRefreshUtc = now;
+
+        _logger.LogInformation("Альфа: куки протухли, поднимаю Chromium для прохождения челленджа...");
+        try
+        {
+            var page = await OpenChallengePageAsync(FeedPagePath, cancellationToken);
+            var freshCookies = await page.Context.CookiesAsync();
+
+            var applied = 0;
+            foreach (var cookie in freshCookies)
+            {
+                var netCookie = new System.Net.Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain);
+                if (cookie.Expires > 0)
+                {
+                    netCookie.Expires = DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires).DateTime;
+                }
+
+                try
+                {
+                    _cookies.Add(netCookie);
+                    applied++;
+                }
+                catch
+                {
+                    // кука с чужим доменом или протухшая — не критично
+                }
+            }
+
+            _logger.LogInformation("Альфа: браузер отдал {Count} свежих кук, челлендж пройден", applied);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception,
+                "Альфа: не удалось обновить куки через браузер. Если повторяется — обнови Alfa:ManualCookies вручную (DevTools → Network → Cookie)");
+        }
+    }
+
+    /// <summary>Запустить Chromium, открыть страницу и дождаться прохождения антибот-челленджа.</summary>
+    private async Task<IPage> OpenChallengePageAsync(string path, CancellationToken cancellationToken)
+    {
+        if (_playwright is null)
         {
             _playwright = await Playwright.CreateAsync();
+        }
+
+        if (_browser is null)
+        {
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
                 Headless = true,
@@ -233,17 +400,19 @@ async payload => {
                 // остальное — чисто от ботов.
                 Args = ["--no-sandbox", "--disable-dev-shm-usage", "--ignore-certificate-errors", "--disable-blink-features=AutomationControlled"]
             });
-            _page = await _browser.NewPageAsync(new BrowserNewPageOptions
-            {
-                UserAgent = UserAgent,
-                Locale = "ru-RU",
-                ViewportSize = new ViewportSize { Width = 1440, Height = 900 }
-            });
 
-            logger.LogInformation("Playwright Chromium запущен для alfabank.ru");
+            _logger.LogInformation("Playwright Chromium запущен для alfabank.ru");
         }
 
-        var url = settings.BaseAddress.TrimEnd('/') + path;
+        var context = await _browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            UserAgent = UserAgent,
+            Locale = "ru-RU",
+            ViewportSize = new ViewportSize { Width = 1440, Height = 900 }
+        });
+        var page = await context.NewPageAsync();
+
+        var url = _settings.BaseAddress.TrimEnd('/') + path;
 
         // до 3 попыток: челлендж после прохождения сам перезагружает страницу,
         // «navigation interrupted» при этом — норма, ретраим
@@ -251,36 +420,54 @@ async payload => {
         {
             try
             {
-                await _page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.Commit, Timeout = 60_000 });
+                await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.Commit, Timeout = 60_000 });
             }
             catch (Exception exception) when (attempt < 3)
             {
-                logger.LogWarning(exception, "Навигация на {Url} оборвалась челленджем, попытка {Attempt}", url, attempt);
+                _logger.LogWarning(exception, "Навигация на {Url} оборвалась челленджем, попытка {Attempt}", url, attempt);
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
                 continue;
             }
 
-            // до N секунд ждём, когда на странице появится вшитое SSR-состояние:
-            // пока висит челлендж — его нет, как только пропустили — сразу появляется
+            // до N секунд ждём появления вшитого SSR-состояния:
+            // пока висит челлендж — его нет, пропустили — сразу появляется
             try
             {
-                await _page.WaitForSelectorAsync("script#app_state",
+                await page.WaitForSelectorAsync("script#app_state",
                     new PageWaitForSelectorOptions
                     {
                         State = WaitForSelectorState.Attached,
-                        Timeout = settings.ChallengeWaitTimeoutSeconds * 1000
+                        Timeout = _settings.ChallengeWaitTimeoutSeconds * 1000
                     });
-                return _page;
+                return page;
             }
             catch (TimeoutException) when (attempt < 3)
             {
-                logger.LogWarning("Челлендж альфы не пропущен за {Seconds} с, попытка {Attempt}",
-                    settings.ChallengeWaitTimeoutSeconds, attempt);
+                _logger.LogWarning("Челлендж альфы не пропущен за {Seconds} с, попытка {Attempt}",
+                    _settings.ChallengeWaitTimeoutSeconds, attempt);
             }
         }
 
+        await context.DisposeAsync();
         throw new TimeoutException(
-            $"Антибот-челлендж alfabank.ru не пропущен за {settings.ChallengeWaitTimeoutSeconds} с (3 попытки)");
+            $"Антибот-челлендж alfabank.ru не пропущен за {_settings.ChallengeWaitTimeoutSeconds} с (3 попытки)");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_browser is not null)
+        {
+            try { await _browser.DisposeAsync().ConfigureAwait(false); } catch { /* уже закрыт */ }
+        }
+
+        if (_playwright is not null)
+        {
+            try { _playwright.Dispose(); } catch { /* уже почищено */ }
+        }
+
+        _http.Dispose();
+        _handler.Dispose();
+        _gate.Dispose();
     }
 
     // --- сериализация запроса/ответа GraphQL ---
@@ -304,6 +491,4 @@ async payload => {
 
     private sealed record FilterTypeFilter(
         [property: JsonPropertyName("eq")] string Eq);
-
-    private sealed record GraphqlHttpResult(int Status, string? Body);
 }

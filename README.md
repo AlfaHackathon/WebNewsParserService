@@ -27,16 +27,22 @@ HTTP-клиенты (`AlfaHackaton.HttpClient`).
 
 ## Как работает воркер Альфа
 
-У alfabank.ru нет публичного новостного API. Обычный `HttpClient` также бесполезен:
+У alfabank.ru нет публичного новостного API, и обычный HttpClient с наскоку тоже
+не работает: сайт за антибот-челленджем ServicePipe и за сертификатом НУЦ Минцифры.
+Поэтому клиент (`Services/AlfaClient.cs`) сделан **гибридным**:
 
-1. Сайт за **антибот-челленджем ServicePipe** (аналог Cloudflare): без выполнения
-   JS отдаётся заглушка-спиннер вместо контента.
-2. TLS-сертификат выпущен **НУЦ Минцифры** (`Russian Trusted Sub CA`) — в доверенных
-   по умолчанию его нет.
+1. **Основной транспорт — HttpClient.** Антибот-челлендж пропускается по кукам
+   антибот-сессии (`spid/spsn...`, живёт ограниченное время): один раз вручную
+   достаём из браузера (DevTools → Network → любой запрос → скопировать значение
+   `Cookie`) и кладём в `Alfa:ManualCookies`. Дальше `CookieContainer` сам
+   поддерживает сессию из ответов сайта. TLS-проверку отключаем в
+   `HttpClientHandler` (сертификат Минцифры в docker-контейнер вставлять некуда).
+2. **Страховка — Playwright.** Если куки протухли и транспорт получил заглушку
+   (маркер `js-challenge-loader` в теле / 403 / 401), раз в минуту максимум
+   поднимается headless Chromium, проходит челлендж и свежие куки подмешиваются
+   в общий контейнер — HttpClient снова работает сам.
 
-Поэтому клиент (`Services/AlfaClient.cs`) ходит через **Playwright** (headless
-Chromium): браузер сам проходит челлендж (`--ignore-certificate-errors` закрывает
-вопрос с российским УЦ). Дальше забираем данные тем же способом, что их собственный фронтенд:
+Данные забираем тем же способом, что их собственный фронтенд:
 
 1. **Лента** — их внутренний GraphQL (анонимный, работает и с курсором):
    `POST https://alfabank.ru/api/v1/eye-of-investor/graphql`, запрос `GetFeedPublications`,
@@ -96,7 +102,8 @@ produce не блокирует парсинг дольше 10с; Confluent.Kafk
 - `Tass__BaseAddress` (дефолт `https://tass.ru`)
 - `Alfa__BaseAddress` (дефолт `https://alfabank.ru`), `Alfa__Rubric` (дефолт `news`),
   `Alfa__Limit` (20), `Alfa__MaxPagesPerPoll` (5), `Alfa__MaxArticleFetchPerPoll` (10),
-  `Alfa__ChallengeWaitTimeoutSeconds` (90)
+  `Alfa__ChallengeWaitTimeoutSeconds` (90), `Alfa__ManualCookies` (пусто — тогда куки
+  добываются автоматически headless-браузером)
 - `Kafka__BootstrapServers`, `Kafka__Topic`, `Kafka__GroupId`
 - `Worker__TassPollIntervalSeconds`, `Worker__AlfaPollIntervalSeconds` (300)
 - `Internal__Secret` — общий секрет кластера (internal-ручки)

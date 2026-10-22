@@ -28,6 +28,14 @@ public class AlfaClientSettings
     /// <summary>Сколько секунд максимум ждать прохода антибот-челленджа.</summary>
     public int ChallengeWaitTimeoutSeconds { get; }
 
+    /// <summary>
+    /// Ручные куки антибот-сессии (ServicePipe) — строка вида Cookie-заголовка:
+    /// "spid=...; spsn=...; xpe=...". Берутся из браузера (DevTools → Network → Cookie).
+    /// Если пусто/протухло — клиент сам пройдёт челлендж headless-браузером (медленнее,
+    /// раз в минуту максимум).
+    /// </summary>
+    public string ManualCookies { get; }
+
     public AlfaClientSettings(IConfiguration configuration)
     {
         BaseAddress = configuration["Alfa:BaseAddress"] ?? "https://alfabank.ru";
@@ -36,5 +44,6 @@ public class AlfaClientSettings
         MaxPagesPerPoll = configuration.GetValue<int?>("Alfa:MaxPagesPerPoll") ?? 5;
         MaxArticleFetchPerPoll = configuration.GetValue<int?>("Alfa:MaxArticleFetchPerPoll") ?? 10;
         ChallengeWaitTimeoutSeconds = configuration.GetValue<int?>("Alfa:ChallengeWaitTimeoutSeconds") ?? 90;
+        ManualCookies = configuration["Alfa:ManualCookies"] ?? "";
     }
 }
