@@ -209,7 +209,7 @@ async payload => {
 
         if (_playwright is not null)
         {
-            try { await _playwright.DisposeAsync().ConfigureAwait(false); } catch { /* уже почищено */ }
+            try { _playwright.Dispose(); } catch { /* уже почищено */ }
         }
 
         _gate.Dispose();
@@ -233,7 +233,7 @@ async payload => {
                 // остальное — чисто от ботов.
                 Args = ["--no-sandbox", "--disable-dev-shm-usage", "--ignore-certificate-errors", "--disable-blink-features=AutomationControlled"]
             });
-            _page = await _browser.NewPageAsync(new BrowserNewContextOptions
+            _page = await _browser.NewPageAsync(new BrowserNewPageOptions
             {
                 UserAgent = UserAgent,
                 Locale = "ru-RU",
