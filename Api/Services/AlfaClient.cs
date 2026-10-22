@@ -60,10 +60,10 @@ public class AlfaClient : IAlfaClient, IAsyncDisposable
     /// (снято с их фронта, работает в анонимном режиме и с курсором).
     /// </summary>
     private const string FeedQuery = """
-        query GetFeedPublications($page: CursorPageFilter, $authorUuid: UuidEq, $isAuthorized: Boolean = false, $filterType: StringFilterEq, $rubricCodes: StringFilterIn) {
+        query GetFeedPublications($page: CursorPageFilter, $filterType: StringFilterEq, $rubricCodes: StringFilterIn) {
           getFeedPublications(
             page: $page
-            filter: {authorUuid: $authorUuid, filterType: $filterType, rubricCodes: $rubricCodes}
+            filter: {filterType: $filterType, rubricCodes: $rubricCodes}
           ) {
             pagination {
               nextCursor
@@ -167,7 +167,6 @@ public class AlfaClient : IAlfaClient, IAsyncDisposable
             FeedQuery,
             new FeedVariables(
                 new PageFilter(cursor, _settings.Limit),
-                false,
                 new RubricCodesFilter([_settings.Rubric]),
                 new FilterTypeFilter("rubrics"))), JsonWeb);
 
@@ -294,7 +293,13 @@ public class AlfaClient : IAlfaClient, IAsyncDisposable
 
     private async Task<string?> GetStringAsync(string path, CancellationToken cancellationToken)
     {
-        using var response = await _http.GetAsync(path, cancellationToken);
+        // Accept как у браузера: страница — HTML (application/json даёт WAF 406)
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Accept.ParseAdd("text/html");
+        request.Headers.Accept.ParseAdd("application/xhtml+xml");
+        request.Headers.Accept.ParseAdd("*/*;q=0.8");
+
+        using var response = await _http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("GET альфа {Path}: статус {Status}", path, (int)response.StatusCode);
@@ -318,7 +323,10 @@ public class AlfaClient : IAlfaClient, IAsyncDisposable
         }
 
         var state = JsonNode.Parse(match.Groups[1].Value);
-        var fetchResults = state?["pageContent"]?["fetchResults"] as JsonArray;
+        // fetchResults бывает в корне app_state и в pageContent (у разных страниц) — проверяем оба
+        var fetchResults =
+            state?["fetchResults"] as JsonArray
+            ?? state?["pageContent"]?["fetchResults"] as JsonArray;
         if (fetchResults is null)
         {
             return null;
@@ -485,7 +493,6 @@ public class AlfaClient : IAlfaClient, IAsyncDisposable
 
     private sealed record FeedVariables(
         [property: JsonPropertyName("page")] PageFilter Page,
-        [property: JsonPropertyName("isAuthorized")] bool IsAuthorized,
         [property: JsonPropertyName("rubricCodes")] RubricCodesFilter RubricCodes,
         [property: JsonPropertyName("filterType")] FilterTypeFilter FilterType);
 
