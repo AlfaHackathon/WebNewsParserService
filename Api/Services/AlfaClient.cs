@@ -150,6 +150,13 @@ public class AlfaClient : IAlfaClient, IAsyncDisposable
         _http.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua", SecChUa);
         _http.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua-Mobile", "?0");
         _http.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua-Platform", "\"Windows\"");
+
+        // без этого набора WAF режет по заголовкам — экспериментально:
+        // [куки без заголовков] -> 403, [куки + браузерные заголовки] -> 200
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "ru-RU,ru;q=0.9");
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("Origin", settings.BaseAddress.TrimEnd('/'));
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", settings.BaseAddress.TrimEnd('/') + FeedPagePath);
+
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     }
 
