@@ -5,6 +5,7 @@ using Api.Models;
 using Api.Models.Tass;
 using Api.Repositories.Interfaces;
 using Api.Services.Interfaces;
+using Api.Workers;
 
 namespace Api.Services;
 
@@ -13,9 +14,9 @@ public class NewsService(
     ITassClient tass,
     INewsRepository news,
     IKafkaProducer<NewsEventMessage> kafka,
+    
     ILogger<NewsService> logger) : INewsService
 {
-    /// <summary>Сколько секунд ждать ProduceAsync, прежде чем не блокировать цикл.</summary>
     private const int ProduceTimeoutSeconds = 10;
 
     public async Task PollTassAsync(CancellationToken cancellationToken = default)
@@ -23,20 +24,17 @@ public class NewsService(
         var latest = await tass.GetLatestAsync(50, cancellationToken);
         if (latest is null)
         {
-            // не падаем: TASS недоступен — просто пропускаем цикл
             logger.LogWarning("TASS недоступен, цикл парсинга пропущен");
             return;
         }
 
-        var fresh = 0;
-        foreach (var item in latest.Where(i => i.Status == "published" && !string.IsNullOrEmpty(i.CompositeId)))
+        foreach (var item in latest)
         {
             var doc = new NewsDocument
             {
                 Source = "tass",
-                ExternalId = item.CompositeId,
+                Url = "https://tass.ru/" + item.ContentUrl,
                 Title = item.Title,
-                Text = item.Subtitle ?? string.Empty,
                 PublishedDt = DateTime.SpecifyKind(item.PublishedDt, DateTimeKind.Utc),
                 StoredAt = DateTime.UtcNow
             };
@@ -45,12 +43,12 @@ public class NewsService(
             {
                 if (!await news.TryAddAsync(doc, cancellationToken))
                 {
-                    continue; // уже в базе
+                    continue;
                 }
-
-                fresh++;
-                await ProduceEventAsync(new NewsEventMessage(
-                    doc.Source, doc.ExternalId, doc.Title, doc.Text, doc.PublishedDt), cancellationToken);
+                
+                TassNewsTextParserWorker.NewsStack.Push(doc);
+                // await ProduceEventAsync(new NewsEventMessage(
+                //     doc.Source, doc.ExternalId, doc.Title, doc.Text, doc.PublishedDt), cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -58,14 +56,8 @@ public class NewsService(
             }
             catch (Exception exception)
             {
-                // одна сломанная новость не должна уронить весь цикл
                 logger.LogError(exception, "Не удалось сохранить новость tass/{ExternalId}", doc.ExternalId);
             }
-        }
-
-        if (fresh > 0)
-        {
-            logger.LogInformation("Новых новостей tass за цикл: {Count}", fresh);
         }
     }
 

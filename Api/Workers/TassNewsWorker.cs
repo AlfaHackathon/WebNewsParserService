@@ -2,27 +2,34 @@ using Api.Services.Interfaces;
 
 namespace Api.Workers;
 
-/// <summary>
-/// Воркер TASS: раз в N секунд (Worker:TassPollIntervalSeconds) смотрит ленту «главной»,
-/// сохраняет новые новости в Монгу и шлёт уведомление в Kafka.
-/// </summary>
-public class TassNewsWorker(
-    INewsService news,
-    IConfiguration configuration,
-    ILogger<TassNewsWorker> logger) : BackgroundService
+
+public class TassNewsWorker : BackgroundService
 {
+    private readonly INewsService _news;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<TassNewsWorker> _logger;
+
+    public TassNewsWorker(INewsService news,
+        IConfiguration configuration,
+        ILogger<TassNewsWorker> logger)
+    {
+        _news = news;
+        _configuration = configuration;
+        _logger = logger;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var seconds = configuration.GetValue<int?>("Worker:TassPollIntervalSeconds") ?? 30;
+        var seconds = _configuration.GetValue<int?>("Worker:TassPollIntervalSeconds") ?? 30;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
 
-        logger.LogInformation("Воркер TASS запущен, интервал {Seconds} с", seconds);
+        _logger.LogInformation("Воркер TASS запущен, интервал {Seconds} с", seconds);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await news.PollTassAsync(stoppingToken);
+                await _news.PollTassAsync(stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -30,8 +37,7 @@ public class TassNewsWorker(
             }
             catch (Exception exception)
             {
-                // цикл не должен умирать разом: проблемы TASS/Mongo ретраятся в следующий тик
-                logger.LogError(exception, "Цикл парсинга TASS упал, ждём следующий тик");
+                _logger.LogError(exception, "Цикл парсинга TASS упал, ждём следующий тик");
             }
 
             try
@@ -47,6 +53,6 @@ public class TassNewsWorker(
             }
         }
 
-        logger.LogInformation("Воркер TASS остановлен");
+        _logger.LogInformation("Воркер TASS остановлен");
     }
 }

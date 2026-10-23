@@ -10,4 +10,5 @@ public interface ITassClient
 
     /// <summary>Поиск по сайту TASS. null — недоступен/ответ не 2xx.</summary>
     Task<List<TassSearchItem>?> SearchAsync(string search, int limit, CancellationToken cancellationToken = default);
+
 }

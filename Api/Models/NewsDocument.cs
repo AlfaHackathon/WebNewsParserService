@@ -17,10 +17,10 @@ public class NewsDocument
 
     /// <summary>Идентификатор новости у источника (composite_id у TASS).</summary>
     public string ExternalId { get; set; } = string.Empty;
-
+    public string Url { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
 
-    /// <summary>Текст новости (lead/подзаголовок из ленты).</summary>
+    /// <summary>Текст новости: полный текст со страницы материала, либо lead из ленты.</summary>
     public string Text { get; set; } = string.Empty;
 
     /// <summary>Дата публикации у источника.</summary>
