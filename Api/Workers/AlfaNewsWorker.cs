@@ -31,7 +31,6 @@ public class AlfaNewsWorker(
             }
             catch (Exception exception)
             {
-                // цикл не должен умирать разом: проблемы альфы/Mongo ретраятся в следующий тик
                 logger.LogError(exception, "Цикл парсинга альфа упал, ждём следующий тик");
             }
 

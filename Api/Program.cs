@@ -7,6 +7,7 @@ using Api.Models;
 using Api.Repositories;
 using Api.Repositories.Interfaces;
 using Api.Services;
+using Api.Services.Clients;
 using Api.Services.Interfaces;
 using Api.Settings;
 using Api.Workers;
@@ -37,13 +38,9 @@ builder.Services.AddSingleton<INewsRepository, NewsRepository>();
 
 builder.Services.AddAlfaHttpClient(new TassClientSettings(builder.Configuration));
 
-// Клиент «Альфа-Инвестора» (Playwright) — обычный HttpClient сайт не отдаёт (антибот)
 builder.Services.AddSingleton(new AlfaClientSettings(builder.Configuration));
 builder.Services.AddSingleton<IAlfaClient, AlfaClient>();
 
-// Клиент «РБК Инвестиций» — обычный HttpClient, данные из SSR-состояния (__NEXT_DATA__).
-// Без AutomaticDecompression сайт отдаёт пустое application/octet-stream (gzip/br-поток),
-// поэтому распаковку включаем явно.
 builder.Services.AddSingleton(new RbcClientSettings(builder.Configuration));
 builder.Services.AddHttpClient<IRbcClient, RbcClient>((provider, http) =>
 {
@@ -59,22 +56,18 @@ builder.Services.AddHttpClient<IRbcClient, RbcClient>((provider, http) =>
         | System.Net.DecompressionMethods.Deflate
 });
 
-// Kafka: IKafkaProducer<NewsEventMessage> — уведомления «новая новость» в топик news-parser.news
 builder.Services.AddProducer<NewsEventMessage>(builder.Configuration.GetSection("Kafka"));
 
 builder.Services.AddSingleton<INewsService, NewsService>();
 builder.Services.AddSingleton<ITassClient, TassClient>();
 builder.Services.AddSingleton<ITassWebDriverService, TassWebDriverService>();
-builder.Services.AddHostedService<TassNewsWorker>();
-builder.Services.AddHostedService<TassNewsTextParserWorker>();
+// builder.Services.AddHostedService<TassNewsWorker>();
+// builder.Services.AddHostedService<TassNewsTextParserWorker>();
 
-// Воркер-парсер «Альфа-Инвестора»
 builder.Services.AddHostedService<AlfaNewsWorker>();
 
-// Воркер-парсер «РБК Инвестиций»
-builder.Services.AddHostedService<RbcNewsWorker>();
+// builder.Services.AddHostedService<RbcNewsWorker>();
 
-// Префикс маршрутов: /news-parser-service/...
 builder.Services.AddControllers(options =>
 {
     options.Conventions.Add(new RoutePrefixConvention("news-parser-service"));

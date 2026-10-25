@@ -23,6 +23,26 @@
       <PackageReference Include="Selenium.WebDriver" Version="4.51.0" />
       <!-- Для альфа-парсера: сайт alfabank.ru за антиботом — ходим настоящим браузером -->
       <PackageReference Include="Microsoft.Playwright" Version="[1.64.0]" />
+      <!-- Файловые ссылки в ресурcах (ResXFileRef) требуют Extensions на рантайме -->
+      <PackageReference Include="System.Resources.Extensions" Version="[8.0.0]" />
+    </ItemGroup>
+    <ItemGroup>
+      <None Remove="Resources\AlfaFeedQuery.graphql" />
+      <EmbeddedResource Include="Resources\AlfaFeedQuery.graphql">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </EmbeddedResource>
+      <EmbeddedResource Update="Resources\GraphQLQueriesAlfa.resx">
+        <Generator>ResXFileCodeGenerator</Generator>
+        <LastGenOutput>GraphQLQueriesAlfa.Designer.cs</LastGenOutput>
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </EmbeddedResource>
+    </ItemGroup>
+    <ItemGroup>
+      <Compile Update="Resources\GraphQLQueriesAlfa.Designer.cs">
+        <DesignTime>True</DesignTime>
+        <AutoGen>True</AutoGen>
+        <DependentUpon>GraphQLQueriesAlfa.resx</DependentUpon>
+      </Compile>
     </ItemGroup>
 
 </Project>

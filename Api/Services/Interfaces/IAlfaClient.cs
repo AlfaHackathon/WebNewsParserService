@@ -12,7 +12,7 @@ public interface IAlfaClient
     /// Страница ленты через GraphQL-эндпоинт (POST /api/v1/eye-of-investor/graphql).
     /// null — эндпоинт недоступен / антибот не пропустил.
     /// </summary>
-    Task<AlfaFeed?> GetFeedAsync(string? cursor, CancellationToken cancellationToken = default);
+    Task<AlfaFeed?> GetFeedAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Полная статья по слагу (path из ленты). null — не удалось вытащить.

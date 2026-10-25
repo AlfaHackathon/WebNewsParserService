@@ -1,3 +1,4 @@
+using Api.Common;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
@@ -13,7 +14,7 @@ public class NewsDocument
     public ObjectId Id { get; set; } = ObjectId.GenerateNewId();
 
     /// <summary>Источник: "tass", "rbc", "alfa" (для следующих воркеров).</summary>
-    public string Source { get; set; } = string.Empty;
+    public NewsSource Source { get; set; }
 
     /// <summary>Идентификатор новости у источника (composite_id у TASS, uuid у Альфы, id у РБК).</summary>
     public string ExternalId { get; set; } = string.Empty;

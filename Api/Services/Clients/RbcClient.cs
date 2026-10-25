@@ -4,7 +4,7 @@ using Api.Models.Rbc;
 using Api.Services.Interfaces;
 using Api.Settings;
 
-namespace Api.Services;
+namespace Api.Services.Clients;
 
 /// <summary>
 /// Клиент «РБК Инвестиций» (https://www.rbc.ru/quote#feed), простой HttpClient.

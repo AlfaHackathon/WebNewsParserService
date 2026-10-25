@@ -23,7 +23,7 @@ public class RbcNewsWorker(
         {
             try
             {
-                await news.PollRbcAsync(stoppingToken);
+                // await news.PollRbcAsync(stoppingToken);
             }
             catch (OperationCanceledException)
             {

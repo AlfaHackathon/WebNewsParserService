@@ -32,4 +32,7 @@ public class TassMainItem
 
     [JsonProperty("content_url")]
     public string ContentUrl { get; set; } = string.Empty;
+    
+    [JsonProperty("external_id")]
+    public string ExternalId { get; set; } = string.Empty;
 }
