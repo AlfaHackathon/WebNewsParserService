@@ -1,14 +1,13 @@
+using AlfaHackaton.HttpClient.Common.Settings;
+
 namespace Api.Settings;
 
 /// <summary>
 /// Настройки клиента «Альфа-Инвестора» (appsettings: секция Alfa).
-/// Обычный HttpClient не подходит: сайт за антиботом (ServicePipe) — запросы
-/// ходят через Playwright (настоящий Chromium), поэтому настроек немного.
+/// Ходим через AlfaHackaton.HttpClient, поэтому транспортные параметры — запуск.
 /// </summary>
-public class AlfaClientSettings
+public class AlfaClientSettings : HttpClientSettings
 {
-    public string BaseAddress { get; }
-
     /// <summary>Рубрика ленты: news / analytics / bonds / dividends / economy_and_trands ...</summary>
     public string Rubric { get; }
 
@@ -19,22 +18,10 @@ public class AlfaClientSettings
     public int MaxPagesPerPoll { get; }
 
     /// <summary>
-    /// Сколько статей за один цикл ходим открывать ради полного текста (открытие
-    /// страницы — несколько секунд, чтобы не засиживаться).
+    /// Сколько статей за один цикл ходим открывать ради полного текста.
     /// У остальных сохраняется пустой текст — как у TASS-воркера.
     /// </summary>
     public int MaxArticleFetchPerPoll { get; }
-
-    /// <summary>Сколько секунд максимум ждать прохода антибот-челленджа.</summary>
-    public int ChallengeWaitTimeoutSeconds { get; }
-
-    /// <summary>
-    /// Ручные куки антибот-сессии (ServicePipe) — строка вида Cookie-заголовка:
-    /// "spid=...; spsn=...; xpe=...". Берутся из браузера (DevTools → Network → Cookie).
-    /// Если пусто/протухло — клиент сам пройдёт челлендж headless-браузером (медленнее,
-    /// раз в минуту максимум).
-    /// </summary>
-    public string ManualCookies { get; }
 
     public AlfaClientSettings(IConfiguration configuration)
     {
@@ -43,7 +30,24 @@ public class AlfaClientSettings
         Limit = configuration.GetValue<int?>("Alfa:Limit") ?? 20;
         MaxPagesPerPoll = configuration.GetValue<int?>("Alfa:MaxPagesPerPoll") ?? 5;
         MaxArticleFetchPerPoll = configuration.GetValue<int?>("Alfa:MaxArticleFetchPerPoll") ?? 10;
-        ChallengeWaitTimeoutSeconds = configuration.GetValue<int?>("Alfa:ChallengeWaitTimeoutSeconds") ?? 90;
-        ManualCookies = configuration["Alfa:ManualCookies"] ?? "";
+
+        // серт НУЦ Минцифры не в доверенных — отключаем проверку
+        IgnoreVerifySsl = true;
+        Timeout = TimeSpan.FromSeconds(30);
+
+        // заголовки как у их же фронтенда (снято из запросов сайта) — часть пропуска WAF:
+        // [куки без заголовков] -> 403, [куки + браузерные заголовки] -> 200
+        DefaultHeaders = headers =>
+        {
+            headers.UserAgent.ParseAdd(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36");
+            headers.TryAddWithoutValidation("Sec-Ch-Ua", "\"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\", \"Not(A:Brand\";v=\"24\"");
+            headers.TryAddWithoutValidation("Sec-Ch-Ua-Mobile", "?0");
+            headers.TryAddWithoutValidation("Sec-Ch-Ua-Platform", "\"Windows\"");
+            headers.TryAddWithoutValidation("Accept-Language", "ru-RU,ru;q=0.9");
+            headers.TryAddWithoutValidation("Origin", BaseAddress.TrimEnd('/'));
+            headers.TryAddWithoutValidation("Referer", BaseAddress.TrimEnd('/') + "/alfa-investor/category/t/news/all-posts/");
+            headers.Accept.ParseAdd("application/json");
+        };
     }
 }

@@ -22,7 +22,6 @@
       <PackageReference Include="AlfaHackaton.Controllers" Version="[1.3.0]" />
       <PackageReference Include="Selenium.WebDriver" Version="4.51.0" />
       <!-- Для альфа-парсера: сайт alfabank.ru за антиботом — ходим настоящим браузером -->
-      <PackageReference Include="Microsoft.Playwright" Version="[1.64.0]" />
       <!-- Файловые ссылки в ресурcах (ResXFileRef) требуют Extensions на рантайме -->
       <PackageReference Include="System.Resources.Extensions" Version="[8.0.0]" />
     </ItemGroup>

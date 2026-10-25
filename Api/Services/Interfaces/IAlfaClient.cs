@@ -3,8 +3,8 @@ using Api.Models.Alfa;
 namespace Api.Services.Interfaces;
 
 /// <summary>
-/// Клиент «Альфа-Инвестора». Сайт за антиботом (ServicePipe) и за сертификатом
-/// НУЦ Минцифры — поэтому весь ход через настоящий браузер (Playwright).
+/// Клиент «Альфа-Инвестора». Ходим через AlfaHackaton.HttpClient
+/// (заголовки как у фронтенда — см. AlfaClientSettings).
 /// </summary>
 public interface IAlfaClient
 {

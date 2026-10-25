@@ -103,11 +103,11 @@ public class NewsService(
         
     }
     
-    // /// <summary>
-    // /// Цикл РБК Инвестиций: забираем ленту (materials + newsfeed из NEXT_DATA страницы
-    // /// /quote), свежие публикации (дедупликация по id) открываем ради полного текста
-    // /// (лимит на цикл — Rbc:MaxArticleFetchPerPoll), о каждой новой шлём событие в Kafka.
-    // /// </summary>
+    /// <summary>
+    /// Цикл РБК Инвестиций: забираем ленту (materials + newsfeed из NEXT_DATA страницы
+    /// /quote), свежие публикации (дедупликация по id) открываем ради полного текста
+    /// (лимит на цикл — Rbc:MaxArticleFetchPerPoll), о каждой новой шлём событие в Kafka.
+    /// </summary>
     // public async Task PollRbcAsync(CancellationToken cancellationToken = default)
     // {
     //     var feed = await rbc.GetFeedAsync(cancellationToken);

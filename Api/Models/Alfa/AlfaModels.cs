@@ -1,5 +1,8 @@
 using System.Text.Json.Serialization;
 
+// JsonProperty — Newtonsoft: тело запроса сериализует AlfaHackaton.HttpClient
+using JsonProperty = Newtonsoft.Json.JsonPropertyAttribute;
+
 namespace Api.Models.Alfa;
 
 /// <summary>Ответ GraphQL-эндпоинта альфы: { data: { getFeedPublications {...} } }.</summary>
@@ -101,3 +104,24 @@ public class AlfaArticle
 
     public List<AlfaAsset> Assets { get; set; } = [];
 }
+
+// --- сериализация запроса GetFeedPublications ---
+// Тело запроса сериализует AlfaHackaton.HttpClient (Newtonsoft) — атрибуты только его.
+
+/// <summary>Тело запроса GraphQL { query, variables }.</summary>
+public sealed record GraphqlRequest(
+    [property: JsonProperty("query")] string Query,
+    [property: JsonProperty("variables")] FeedVariables Variables);
+
+/// <summary>Переменные ленты: фильтр по рубрике (shape — как шлёт их фронтенд).</summary>
+public sealed record FeedVariables(
+    [property: JsonProperty("rubricCodes")] RubricCodesFilter RubricCodes,
+    [property: JsonProperty("filterType")] FilterTypeFilter FilterType);
+
+/// <summary>{ "in": [...] }.</summary>
+public sealed record RubricCodesFilter(
+    [property: JsonProperty("in")] string[] In);
+
+/// <summary>{ "eq": "..." }.</summary>
+public sealed record FilterTypeFilter(
+    [property: JsonProperty("eq")] string Eq);

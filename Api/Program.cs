@@ -36,10 +36,14 @@ builder.Services.AddSingleton(new MongoIndexDefinition("news", async context =>
 
 builder.Services.AddSingleton<INewsRepository, NewsRepository>();
 
-builder.Services.AddAlfaHttpClient(new TassClientSettings(builder.Configuration));
-
-builder.Services.AddSingleton(new AlfaClientSettings(builder.Configuration));
+// Клиент альфы через AlfaHackaton.HttpClient:
+var alfaSettings = new AlfaClientSettings(builder.Configuration);
+builder.Services.AddSingleton(alfaSettings);
+builder.Services.AddAlfaHttpClient(alfaSettings);
 builder.Services.AddSingleton<IAlfaClient, AlfaClient>();
+
+// Клиент tass-API через AlfaHackaton.HttpClient:
+builder.Services.AddAlfaHttpClient(new TassClientSettings(builder.Configuration));
 
 builder.Services.AddSingleton(new RbcClientSettings(builder.Configuration));
 builder.Services.AddHttpClient<IRbcClient, RbcClient>((provider, http) =>
@@ -64,9 +68,9 @@ builder.Services.AddSingleton<ITassWebDriverService, TassWebDriverService>();
 // builder.Services.AddHostedService<TassNewsWorker>();
 // builder.Services.AddHostedService<TassNewsTextParserWorker>();
 
-builder.Services.AddHostedService<AlfaNewsWorker>();
+// builder.Services.AddHostedService<AlfaNewsWorker>();
 
-// builder.Services.AddHostedService<RbcNewsWorker>();
+builder.Services.AddHostedService<RbcNewsWorker>();
 
 builder.Services.AddControllers(options =>
 {
