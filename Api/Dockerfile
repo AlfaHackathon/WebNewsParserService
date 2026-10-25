@@ -26,6 +26,17 @@ ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./Api.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
+USER root
 WORKDIR /app
 COPY --from=publish /app/publish .
+# Critical: Selenium Manager does not start without execute permission
+RUN test -f /app/runtimes/linux-x64/native/selenium-manager && chmod +x /app/runtimes/linux-x64/native/selenium-manager
+# Google Chrome для Selenium (headless) — в образе его нет; chromium в Ubuntu это snap-обманка, не годится
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends wget ca-certificates fonts-liberation \
+    && wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && rm -f /tmp/chrome.deb /var/lib/apt/lists/* -r \
+    && ln -sf /opt/google/chrome/google-chrome /usr/bin/google-chrome
+USER $APP_UID
 ENTRYPOINT ["dotnet", "Api.dll"]

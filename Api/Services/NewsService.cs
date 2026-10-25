@@ -17,7 +17,8 @@ public class NewsService(
     IAlfaClient alfa,
     INewsRepository news,
     IKafkaProducer<NewsEventMessage> kafka,
-    ILogger<NewsService> logger) : INewsService
+    ILogger<NewsService> logger,
+    IConfiguration configuration) : INewsService
 {
     private const int ProduceTimeoutSeconds = 10;
 
@@ -205,7 +206,7 @@ public class NewsService(
     /// </summary>
     private async Task ProduceEventAsync(NewsEventMessage message, CancellationToken cancellationToken)
     {
-        var produce = kafka.ProduceAsync(message, cancellationToken);
+        var produce = kafka.ProduceAsync(configuration["Kafka:Topic"] ?? "news-parser.news", message, cancellationToken);
         if (await Task.WhenAny(produce, Task.Delay(TimeSpan.FromSeconds(ProduceTimeoutSeconds), cancellationToken)) != produce)
         {
             logger.LogWarning("Kafka недоступна — событие о новости {Source}/{Id} будет доставлено позже",
