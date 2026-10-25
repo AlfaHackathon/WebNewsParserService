@@ -14,7 +14,7 @@ public class AlfaNewsWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var seconds = configuration.GetValue<int?>("Worker:AlfaPollIntervalSeconds") ?? 300;
+        var seconds = configuration.GetValue<int?>("Worker:AlfaPollIntervalSeconds") ?? 30;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
 
         logger.LogInformation("Воркер Альфа запущен, интервал {Seconds} с", seconds);

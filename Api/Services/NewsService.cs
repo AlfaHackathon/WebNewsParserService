@@ -14,6 +14,8 @@ public class NewsService(
     ITassClient tass,
     IAlfaClient alfa,
     AlfaClientSettings alfaSettings,
+    IRbcClient rbc,
+    RbcClientSettings rbcSettings,
     INewsRepository news,
     IKafkaProducer<NewsEventMessage> kafka,
     ILogger<NewsService> logger) : INewsService
@@ -159,6 +161,78 @@ public class NewsService(
         if (fresh > 0)
         {
             logger.LogInformation("Новых новостей alfa за цикл: {Count}", fresh);
+        }
+    }
+
+    /// <summary>
+    /// Цикл РБК Инвестиций: забираем ленту (materials + newsfeed из NEXT_DATA страницы
+    /// /quote), свежие публикации (дедупликация по id) открываем ради полного текста
+    /// (лимит на цикл — Rbc:MaxArticleFetchPerPoll), о каждой новой шлём событие в Kafka.
+    /// </summary>
+    public async Task PollRbcAsync(CancellationToken cancellationToken = default)
+    {
+        var feed = await rbc.GetFeedAsync(cancellationToken);
+        if (feed is null)
+        {
+            // не падаем: РБК недоступен — просто пропускаем цикл
+            logger.LogWarning("РБК Инвестиции недоступны, цикл парсинга пропущен");
+            return;
+        }
+
+        var fresh = 0;
+        var articleFetched = 0;
+        foreach (var item in feed.Items)
+        {
+            if (string.IsNullOrEmpty(item.Id) || string.IsNullOrEmpty(item.Url))
+            {
+                continue;
+            }
+
+            try
+            {
+                // полный текст в ленте не отдаётся — открытие страницы статьи условно
+                // доли секунды×десятки, поэтому ограничиваем число загрузок за цикл
+                var text = string.Empty;
+                if (articleFetched < rbcSettings.MaxArticleFetchPerPoll)
+                {
+                    var article = await rbc.GetArticleAsync(item.Url, cancellationToken);
+                    articleFetched++;
+                    text = article?.BodyMd ?? string.Empty;
+                }
+
+                var doc = new NewsDocument
+                {
+                    Source = "rbc",
+                    ExternalId = item.Id,
+                    Title = item.Headline,
+                    Text = text,
+                    PublishedDt = item.PublishedAt,
+                    StoredAt = DateTime.UtcNow
+                };
+
+                if (!await news.TryAddAsync(doc, cancellationToken))
+                {
+                    continue; // уже в базе
+                }
+
+                fresh++;
+                await ProduceEventAsync(new NewsEventMessage(
+                    doc.Source, doc.ExternalId, doc.Title, doc.Text, doc.PublishedDt), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                // одна сломанная новость не должна уронить весь цикл
+                logger.LogError(exception, "Не удалось сохранить новость rbc/{ExternalId}", item.Id);
+            }
+        }
+
+        if (fresh > 0)
+        {
+            logger.LogInformation("Новых новостей rbc за цикл: {Count}", fresh);
         }
     }
 

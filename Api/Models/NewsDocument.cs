@@ -15,7 +15,7 @@ public class NewsDocument
     /// <summary>Источник: "tass", "rbc", "alfa" (для следующих воркеров).</summary>
     public string Source { get; set; } = string.Empty;
 
-    /// <summary>Идентификатор новости у источника (composite_id у TASS).</summary>
+    /// <summary>Идентификатор новости у источника (composite_id у TASS, uuid у Альфы, id у РБК).</summary>
     public string ExternalId { get; set; } = string.Empty;
 
     public string Title { get; set; } = string.Empty;

@@ -13,6 +13,9 @@ public interface INewsService
     /// <summary>Один цикл парсинга «Альфа-Инвестора» (GraphQL + страницы статей).</summary>
     Task PollAlfaAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Один цикл парсинга «РБК Инвестиций» (SSR-лента + страницы статей).</summary>
+    Task PollRbcAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Поиск по сохранённым новостям (Монга).</summary>
     Task<List<NewsSearchResponse>> SearchAsync(string search, int limit, CancellationToken cancellationToken = default);
 
