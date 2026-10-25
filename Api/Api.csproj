@@ -17,9 +17,31 @@
          наибольшую версию с фида и не разъехалась с локальной сборкой -->
     <ItemGroup>
       <PackageReference Include="AlfaHackaton.HttpClient" Version="[1.1.1]" />
-      <PackageReference Include="AlfaHackaton.Kafka" Version="[1.0.1]" />
+      <PackageReference Include="AlfaHackaton.Kafka" Version="[1.1.0]" />
       <PackageReference Include="AlfaHackaton.MongoContext" Version="[1.0.0]" />
       <PackageReference Include="AlfaHackaton.Controllers" Version="[1.3.0]" />
+      <PackageReference Include="Selenium.WebDriver" Version="4.51.0" />
+      <!-- Для альфа-парсера: сайт alfabank.ru за антиботом — ходим настоящим браузером -->
+      <!-- Файловые ссылки в ресурcах (ResXFileRef) требуют Extensions на рантайме -->
+      <PackageReference Include="System.Resources.Extensions" Version="[8.0.0]" />
+    </ItemGroup>
+    <ItemGroup>
+      <None Remove="Resources\AlfaFeedQuery.graphql" />
+      <EmbeddedResource Include="Resources\AlfaFeedQuery.graphql">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </EmbeddedResource>
+      <EmbeddedResource Update="Resources\GraphQLQueriesAlfa.resx">
+        <Generator>ResXFileCodeGenerator</Generator>
+        <LastGenOutput>GraphQLQueriesAlfa.Designer.cs</LastGenOutput>
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </EmbeddedResource>
+    </ItemGroup>
+    <ItemGroup>
+      <Compile Update="Resources\GraphQLQueriesAlfa.Designer.cs">
+        <DesignTime>True</DesignTime>
+        <AutoGen>True</AutoGen>
+        <DependentUpon>GraphQLQueriesAlfa.resx</DependentUpon>
+      </Compile>
     </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using AlfaHackaton.MongoContext;
+using Api.Common;
 using Api.Models;
 using Api.Repositories.Interfaces;
 using MongoDB.Bson;
@@ -12,33 +13,30 @@ public class NewsRepository(IMongoContext mongo) : INewsRepository
     private const string CollectionName = "news";
     private IMongoCollection<NewsDocument> Collection => mongo.GetCollection<NewsDocument>(CollectionName);
 
-    public async Task<bool> TryAddAsync(NewsDocument news, CancellationToken cancellationToken = default)
+    public async Task<ObjectId> AddAsync(NewsDocument news, CancellationToken cancellationToken = default)
     {
-        // Дедупликация проверкой перед вставкой (индекс (Source, ExternalId) уникальный и ловит гонки)
-        var duplicate = Builders<NewsDocument>.Filter.And(
-            Builders<NewsDocument>.Filter.Eq(n => n.Source, news.Source),
-            Builders<NewsDocument>.Filter.Eq(n => n.ExternalId, news.ExternalId));
+        await Collection.InsertOneAsync(news, cancellationToken: cancellationToken);
+        return news.Id;
+    }
 
-        if (await Collection.Find(duplicate).AnyAsync(cancellationToken))
-        {
-            return false;
-        }
+    public Task<NewsDocument?> GetByExternalIdAndSourceAsync(string externalId, NewsSource source, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<NewsDocument>.Filter.And(
+            Builders<NewsDocument>.Filter.Eq(n => n.Source, source),
+            Builders<NewsDocument>.Filter.Eq(n => n.ExternalId, externalId));
 
-        try
-        {
-            await Collection.InsertOneAsync(news, cancellationToken: cancellationToken);
-            return true;
-        }
-        catch (MongoWriteException exception) when (exception.WriteError.Code == 11000)
-        {
-            // 11000 — duplicate key: гонка, новость вставил другой воркер между проверкой и вставкой
-            return false;
-        }
+        return Collection.Find(filter).FirstOrDefaultAsync(cancellationToken)!;
+    }
+
+    public async Task<bool> ReplaceAsync(NewsDocument news, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<NewsDocument>.Filter.Eq(n => n.Id, news.Id);
+        var result = await Collection.ReplaceOneAsync(filter, news, cancellationToken: cancellationToken);
+        return result.IsAcknowledged && result.MatchedCount > 0;
     }
 
     public async Task<List<NewsDocument>> SearchAsync(string search, int limit, CancellationToken cancellationToken = default)
     {
-        // Case-insensitive подстрока: текстовый индекс Mongo ищет слова, а подстрока удобнее для коротких запросов
         var pattern = new BsonRegularExpression(Regex.Escape(search), "i");
         var filter = Builders<NewsDocument>.Filter.Or(
             Builders<NewsDocument>.Filter.Regex(n => n.Title, pattern),

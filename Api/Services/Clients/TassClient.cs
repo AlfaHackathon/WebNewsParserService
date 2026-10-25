@@ -3,7 +3,7 @@ using Api.Models.Tass;
 using Api.Services.Interfaces;
 using Api.Settings;
 
-namespace Api.Services;
+namespace Api.Services.Clients;
 
 /// <summary>
 /// Клиент API tass.ru. BaseAddress — из настроек (Settings/TassClientSettings.cs).

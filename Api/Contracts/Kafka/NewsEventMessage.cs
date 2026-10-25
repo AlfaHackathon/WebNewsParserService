@@ -1,3 +1,5 @@
+using Api.Common;
+
 namespace Api.Contracts.Kafka;
 
 /// <summary>
@@ -5,8 +7,5 @@ namespace Api.Contracts.Kafka;
 /// Поля = то же самое, что лежит в Монге.
 /// </summary>
 public record NewsEventMessage(
-    string Source,
-    string ExternalId,
-    string Title,
-    string Text,
-    DateTime PublishedAt);
+    NewsSource Source,
+    string Id);

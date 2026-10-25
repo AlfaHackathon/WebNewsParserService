@@ -3,9 +3,11 @@ using AlfaHackaton.Kafka;
 using AlfaHackaton.MongoContext;
 using Api.Common;
 using Api.Contracts.Kafka;
+using Api.Models;
 using Api.Repositories;
 using Api.Repositories.Interfaces;
 using Api.Services;
+using Api.Services.Clients;
 using Api.Services.Interfaces;
 using Api.Settings;
 using Api.Workers;
@@ -14,12 +16,10 @@ using MongoDB.Driver;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Mongo (AlfaHackaton.MongoContext): одна база на сервис — news-parser (см. agent.md)
 builder.Services.AddMongo(new MongoSettings(
     builder.Configuration["Mongo:ConnectionString"] ?? "mongodb://localhost:27017",
     builder.Configuration["Mongo:Database"] ?? "news-parser"));
 
-// Индексы news: уникальный (Source, ExternalId) — дедупликация; текстовый по заголовку и тексту
 builder.Services.AddSingleton(new MongoIndexDefinition("news", async context =>
 {
     var collection = context.Database.GetCollection<BsonDocument>("news");
@@ -36,21 +36,42 @@ builder.Services.AddSingleton(new MongoIndexDefinition("news", async context =>
 
 builder.Services.AddSingleton<INewsRepository, NewsRepository>();
 
-// Клиент tass.ru через AlfaHackaton.HttpClient: BaseAddress — в TassClientSettings
+// Клиент альфы через AlfaHackaton.HttpClient:
+var alfaSettings = new AlfaClientSettings(builder.Configuration);
+builder.Services.AddSingleton(alfaSettings);
+builder.Services.AddAlfaHttpClient(alfaSettings);
+builder.Services.AddSingleton<IAlfaClient, AlfaClient>();
+
+// Клиент tass-API через AlfaHackaton.HttpClient:
 builder.Services.AddAlfaHttpClient(new TassClientSettings(builder.Configuration));
 
-// Kafka: IKafkaProducer<NewsEventMessage> — уведомления «новая новость» в топик news-parser.news
+builder.Services.AddSingleton(new RbcClientSettings(builder.Configuration));
+builder.Services.AddHttpClient<IRbcClient, RbcClient>((provider, http) =>
+{
+    var settings = provider.GetRequiredService<RbcClientSettings>();
+    http.BaseAddress = new Uri(settings.BaseAddress);
+    http.Timeout = TimeSpan.FromSeconds(30);
+    http.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = System.Net.DecompressionMethods.GZip
+        | System.Net.DecompressionMethods.Brotli
+        | System.Net.DecompressionMethods.Deflate
+});
+
 builder.Services.AddProducer<NewsEventMessage>(builder.Configuration.GetSection("Kafka"));
 
-// Слой бизнес-логики: контроллеры и воркер работают только с сервисом.
-// Singleton: воркер (hosted service) тоже тянет эти зависимости
 builder.Services.AddSingleton<INewsService, NewsService>();
 builder.Services.AddSingleton<ITassClient, TassClient>();
-
-// Воркер-парсер TASS
+builder.Services.AddSingleton<ITassWebDriverService, TassWebDriverService>();
 builder.Services.AddHostedService<TassNewsWorker>();
+builder.Services.AddHostedService<TassNewsTextParserWorker>();
 
-// Префикс маршрутов: /news-parser-service/...
+builder.Services.AddHostedService<AlfaNewsWorker>();
+
+// builder.Services.AddHostedService<RbcNewsWorker>();
+
 builder.Services.AddControllers(options =>
 {
     options.Conventions.Add(new RoutePrefixConvention("news-parser-service"));
@@ -61,10 +82,8 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Создаём Mongo-индексы при старте (идемпотентно)
 await app.Services.UseMongoIndexesAsync();
 
-// Swagger: доступен на /news-parser-service/swagger, включается флагом Swagger:Enabled
 if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger(options => options.RouteTemplate = "news-parser-service/swagger/{documentName}/swagger.json");

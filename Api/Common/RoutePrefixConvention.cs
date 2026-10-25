@@ -10,7 +10,6 @@ public class RoutePrefixConvention(string prefix) : IControllerModelConvention
 {
     public void Apply(ControllerModel controller)
     {
-        // Маршруты, заданные на самом контроллере
         foreach (var selector in controller.Selectors)
         {
             selector.AttributeRouteModel = selector.AttributeRouteModel is null
@@ -21,7 +20,6 @@ public class RoutePrefixConvention(string prefix) : IControllerModelConvention
                 };
         }
 
-        // Если на контроллере маршрутов нет — префиксуем маршруты экшенов
         if (controller.Selectors.Any(s => s.AttributeRouteModel is not null))
         {
             return;

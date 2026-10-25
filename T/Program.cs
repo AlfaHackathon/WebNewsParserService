@@ -1,0 +1,10 @@
+var binDir = AppContext.BaseDirectory;
+var asm = System.Reflection.Assembly.LoadFrom(Path.Combine(binDir, "AlfaHackaton.HttpClient.dll"));
+foreach (var t in asm.GetTypes())
+{
+    Console.WriteLine("== " + t.FullName);
+    foreach (var m in t.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly))
+    {
+        Console.WriteLine("   " + m);
+    }
+}
