@@ -1,4 +1,6 @@
-﻿FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+﻿# Финальная стадия — образ Playwright (внутри Chromium + системные зависимости):
+# альфа-парсер ходит через настоящий браузер, aspnet-образа для этого мало
+FROM mcr.microsoft.com/playwright/dotnet:v1.64.0 AS base
 USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
