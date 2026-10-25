@@ -1,4 +1,5 @@
 using Api.Contracts;
+using Api.Models;
 using Api.Models.Tass;
 
 namespace Api.Services.Interfaces;
@@ -20,4 +21,6 @@ public interface INewsService
 
     /// <summary>Proxy-поиск по TASS (без сохранения). null — TASS недоступен.</summary>
     Task<List<TassSearchItem>?> SearchTassAsync(string search, int limit, CancellationToken cancellationToken = default);
+
+    Task<NewsSearchResponse?> GetNewsById(string id, CancellationToken cancellationToken = default);
 }
