@@ -15,14 +15,16 @@ public class TassNewsTextParserWorker : BackgroundService
     private readonly ITassWebDriverService _driverService;
     private readonly ILogger<TassNewsWorker> _logger;
     private readonly IKafkaProducer<NewsEventMessage> _kafka;
+    private readonly IConfiguration _configuration;
 
 
-    public TassNewsTextParserWorker(ITassWebDriverService driverService, INewsRepository newsRepository, ILogger<TassNewsWorker> logger, IKafkaProducer<NewsEventMessage> kafka)
+    public TassNewsTextParserWorker(ITassWebDriverService driverService, INewsRepository newsRepository, ILogger<TassNewsWorker> logger, IKafkaProducer<NewsEventMessage> kafka, IConfiguration configuration)
     {
         _driverService = driverService;
         _newsRepository = newsRepository;
         _logger = logger;
         _kafka = kafka;
+        _configuration = configuration;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -39,7 +41,7 @@ public class TassNewsTextParserWorker : BackgroundService
             {
                 document.Text = _driverService.GetTextNews(document.Url);
                 await _newsRepository.ReplaceAsync(document, stoppingToken);
-                _ = _kafka.ProduceAsync(new NewsEventMessage(NewsSource.Tass, document.Id.ToString()), stoppingToken);
+                _ = _kafka.ProduceAsync(_configuration["Kafka:Topic"] ?? "news-parser.news", new NewsEventMessage(NewsSource.Tass, document.Id.ToString()), stoppingToken);
             }
             catch (Exception e)
             {

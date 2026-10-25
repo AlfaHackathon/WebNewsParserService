@@ -27,6 +27,9 @@ public class TassWebDriverService : ITassWebDriverService
         options.AddArgument("--no-default-browser-check");
         options.AddArgument("--disable-infobars");
         options.AddArgument("--headless");
+        // Нужны в Docker-контейнере (non-root, без /dev/shm увеличенного размера)
+        options.AddArgument("--no-sandbox");
+        options.AddArgument("--disable-dev-shm-usage");
         
         _driver = new ChromeDriver(options);
         _driver.ExecuteCdpCommand(

@@ -1,5 +1,4 @@
 using Api.Contracts;
-using Api.Models;
 using Api.Models.Tass;
 
 namespace Api.Services.Interfaces;
