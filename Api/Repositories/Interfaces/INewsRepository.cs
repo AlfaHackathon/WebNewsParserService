@@ -12,4 +12,5 @@ public interface INewsRepository
     /// <summary>Поиск по заголовку и тексту (case-insensitive). Свежие первыми.</summary>
     Task<List<NewsDocument>> SearchAsync(string search, int limit, CancellationToken cancellationToken = default);
     Task<bool> ReplaceAsync(NewsDocument news, CancellationToken cancellationToken = default);
+    public Task<NewsDocument?> GetByIdAsync(ObjectId id, CancellationToken cancellationToken = default);
 }

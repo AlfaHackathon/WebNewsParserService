@@ -24,6 +24,20 @@ public class NewsInternalController(INewsService news) : ControllerBase
         return Ok(found);
     }
 
+    [HttpGet("internal/news/{id}")]
+    public async Task<IActionResult> GetNewsById(string id, CancellationToken ct = default)
+    {
+        if (!IsInternalRequest()) return Unauthorized(new { error = "Только для внутренних вызовов" });
+        var result = await news.GetNewsById(id, ct);
+        
+        if (result is null)
+        {
+            return NotFound();
+        }
+        
+        return Ok(result);
+    }
+
     /// <summary>Поиск по TASS (proxy, без сохранения).</summary>
     [HttpGet("internal/news/tass-search")]
     public async Task<IActionResult> TassSearch([FromQuery] string search, [FromQuery] int limit = 6, CancellationToken ct = default)

@@ -7,6 +7,7 @@ using Api.Models.Tass;
 using Api.Repositories.Interfaces;
 using Api.Services.Interfaces;
 using Api.Workers;
+using MongoDB.Bson;
 
 namespace Api.Services;
 
@@ -176,6 +177,22 @@ public class NewsService(
         return docs
             .Select(d => new NewsSearchResponse(d.Source, d.ExternalId, d.Title, d.Text, d.PublishedDt))
             .ToList();
+    }
+
+    public async Task<NewsSearchResponse?> GetNewsById(string id, CancellationToken cancellationToken = default)
+    {
+        var result = await news.GetByIdAsync(ObjectId.Parse(id), cancellationToken);
+        if (result is null)
+        {
+            return null;
+        }
+
+        return new NewsSearchResponse(
+            result.Source,
+            result.ExternalId,
+            result.Title,
+            result.Text,
+            result.PublishedDt);
     }
 
     public Task<List<TassSearchItem>?> SearchTassAsync(string search, int limit, CancellationToken cancellationToken = default)

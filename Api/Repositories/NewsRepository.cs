@@ -28,6 +28,13 @@ public class NewsRepository(IMongoContext mongo) : INewsRepository
         return Collection.Find(filter).FirstOrDefaultAsync(cancellationToken)!;
     }
 
+    public Task<NewsDocument?> GetByIdAsync(ObjectId id, CancellationToken cancellationToken = default)
+    {
+        var filter = Builders<NewsDocument>.Filter.Eq(n => n.Id, id);
+        
+        return Collection.Find(filter).FirstOrDefaultAsync(cancellationToken)!;
+    }
+
     public async Task<bool> ReplaceAsync(NewsDocument news, CancellationToken cancellationToken = default)
     {
         var filter = Builders<NewsDocument>.Filter.Eq(n => n.Id, news.Id);
