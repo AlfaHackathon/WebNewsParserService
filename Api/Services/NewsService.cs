@@ -6,7 +6,6 @@ using Api.Models;
 using Api.Models.Tass;
 using Api.Repositories.Interfaces;
 using Api.Services.Interfaces;
-using Api.Settings;
 using Api.Workers;
 
 namespace Api.Services;
@@ -15,9 +14,6 @@ namespace Api.Services;
 public class NewsService(
     ITassClient tass,
     IAlfaClient alfa,
-    AlfaClientSettings alfaSettings,
-    IRbcClient rbc,
-    RbcClientSettings rbcSettings,
     INewsRepository news,
     IKafkaProducer<NewsEventMessage> kafka,
     ILogger<NewsService> logger) : INewsService
@@ -53,7 +49,7 @@ public class NewsService(
                 StoredAt = DateTime.UtcNow
             };
 
-            var id = await news.AddAsync(doc, cancellationToken);
+            await news.AddAsync(doc, cancellationToken);
             TassNewsTextParserWorker.NewsStack.Push(doc);
             // _ = ProduceEventAsync(new NewsEventMessage(doc.Source, id.ToString()), cancellationToken);
         }
@@ -97,8 +93,7 @@ public class NewsService(
             }
 
             var id = await news.AddAsync(doc, cancellationToken);
-            // _ = ProduceEventAsync(new NewsEventMessage(NewsSource.Alfa, id.ToString()), cancellationToken);
-            
+            _ = ProduceEventAsync(new NewsEventMessage(NewsSource.Alfa, id.ToString()), cancellationToken);
         }
         
     }

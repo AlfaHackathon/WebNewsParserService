@@ -17,7 +17,7 @@
          наибольшую версию с фида и не разъехалась с локальной сборкой -->
     <ItemGroup>
       <PackageReference Include="AlfaHackaton.HttpClient" Version="[1.1.1]" />
-      <PackageReference Include="AlfaHackaton.Kafka" Version="[1.0.1]" />
+      <PackageReference Include="AlfaHackaton.Kafka" Version="[1.1.0]" />
       <PackageReference Include="AlfaHackaton.MongoContext" Version="[1.0.0]" />
       <PackageReference Include="AlfaHackaton.Controllers" Version="[1.3.0]" />
       <PackageReference Include="Selenium.WebDriver" Version="4.51.0" />

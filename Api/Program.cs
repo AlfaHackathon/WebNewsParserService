@@ -65,12 +65,12 @@ builder.Services.AddProducer<NewsEventMessage>(builder.Configuration.GetSection(
 builder.Services.AddSingleton<INewsService, NewsService>();
 builder.Services.AddSingleton<ITassClient, TassClient>();
 builder.Services.AddSingleton<ITassWebDriverService, TassWebDriverService>();
-// builder.Services.AddHostedService<TassNewsWorker>();
-// builder.Services.AddHostedService<TassNewsTextParserWorker>();
+builder.Services.AddHostedService<TassNewsWorker>();
+builder.Services.AddHostedService<TassNewsTextParserWorker>();
 
-// builder.Services.AddHostedService<AlfaNewsWorker>();
+builder.Services.AddHostedService<AlfaNewsWorker>();
 
-builder.Services.AddHostedService<RbcNewsWorker>();
+// builder.Services.AddHostedService<RbcNewsWorker>();
 
 builder.Services.AddControllers(options =>
 {

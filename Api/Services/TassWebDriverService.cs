@@ -26,6 +26,7 @@ public class TassWebDriverService : ITassWebDriverService
         options.AddArgument("--start-maximized");
         options.AddArgument("--no-default-browser-check");
         options.AddArgument("--disable-infobars");
+        options.AddArgument("--headless");
         
         _driver = new ChromeDriver(options);
         _driver.ExecuteCdpCommand(
