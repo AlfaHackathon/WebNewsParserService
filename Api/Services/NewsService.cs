@@ -152,7 +152,7 @@ public class NewsService(
     {
         var docs = await news.SearchAsync(search, limit, cancellationToken);
         return docs
-            .Select(d => new NewsSearchResponse(d.Source, d.ExternalId, d.Title, d.Text, d.PublishedDt))
+            .Select(d => new NewsSearchResponse(d.Source, d.ExternalId, d.Title, d.Text, d.PublishedDt, SourceUrl(d.Url)))
             .ToList();
     }
 
@@ -169,8 +169,14 @@ public class NewsService(
             result.ExternalId,
             result.Title,
             result.Text,
-            result.PublishedDt);
+            result.PublishedDt,
+            SourceUrl(result.Url));
     }
+
+    private static string? SourceUrl(string? value) => value is { Length: > 0 and <= 4096 } &&
+        !value.Any(character => char.IsControl(character) || char.IsWhiteSpace(character) || character == '\\') &&
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" &&
+        uri.Host.Length > 0 && uri.UserInfo.Length == 0 ? value : null;
 
     public Task<List<TassSearchItem>?> SearchTassAsync(string search, int limit, CancellationToken cancellationToken = default)
         => tass.SearchAsync(search, limit, cancellationToken);
