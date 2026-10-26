@@ -8,4 +8,5 @@ public record NewsSearchResponse(
     string ExternalId,
     string Title,
     string Text,
-    DateTime PublishedAt);
+    DateTime PublishedAt,
+    string? Url = null);
