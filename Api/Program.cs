@@ -45,20 +45,19 @@ builder.Services.AddSingleton<IAlfaClient, AlfaClient>();
 // Клиент tass-API через AlfaHackaton.HttpClient:
 builder.Services.AddAlfaHttpClient(new TassClientSettings(builder.Configuration));
 
-builder.Services.AddSingleton(new RbcClientSettings(builder.Configuration));
-builder.Services.AddHttpClient<IRbcClient, RbcClient>((provider, http) =>
-{
-    var settings = provider.GetRequiredService<RbcClientSettings>();
-    http.BaseAddress = new Uri(settings.BaseAddress);
-    http.Timeout = TimeSpan.FromSeconds(30);
-    http.DefaultRequestHeaders.UserAgent.ParseAdd(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36");
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-{
-    AutomaticDecompression = System.Net.DecompressionMethods.GZip
-        | System.Net.DecompressionMethods.Brotli
-        | System.Net.DecompressionMethods.Deflate
-});
+// Клиент «РБК Инвестиций» через AlfaHackaton.HttpClient:
+// сайт отдаёт gzip/br-поток — без авто-распаковки тело приходит пустым
+// (октет-стрим), поэтому декомпрессию включаем явно.
+var rbcSettings = new RbcClientSettings(builder.Configuration);
+builder.Services.AddSingleton(rbcSettings);
+builder.Services.AddAlfaHttpClient(rbcSettings)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip
+            | System.Net.DecompressionMethods.Brotli
+            | System.Net.DecompressionMethods.Deflate
+    });
+builder.Services.AddSingleton<IRbcClient, RbcClient>();
 
 builder.Services.AddProducer<NewsEventMessage>(builder.Configuration.GetSection("Kafka"));
 
@@ -69,8 +68,7 @@ builder.Services.AddHostedService<TassNewsWorker>();
 builder.Services.AddHostedService<TassNewsTextParserWorker>();
 
 builder.Services.AddHostedService<AlfaNewsWorker>();
-
-// builder.Services.AddHostedService<RbcNewsWorker>();
+builder.Services.AddHostedService<RbcNewsWorker>();
 
 builder.Services.AddControllers(options =>
 {
