@@ -23,8 +23,7 @@ public class RbcNewsWorker(
         {
             try
             {
-                // TODO: Переделать так чтоб нормально было написано через HttpClient который у нас парсить только первую страницу, без всяких страниц (мб их и нет но мне лень смотреть)
-                // await news.PollRbcAsync(stoppingToken);
+                await news.PollRbcAsync(stoppingToken);
             }
             catch (OperationCanceledException)
             {
